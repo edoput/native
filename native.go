@@ -1,15 +1,9 @@
-// Package native implements the native part
-// of a web-extension
-
-// The assumption here is that communication
-// happens over the pair STDIO/STDOUT and
-// STDERR is displayed in the browser console (Ctrl + J)
-// and the extension and the native process communicate
-// exchanging JSON encoded messages.
-
-// Only one goroutine can write/read at a time
-// from a conn but you can have concurrent write and
-// read as they go over different files.
+// Package native implements the native part of a web-extension
+// native process.
+//
+// As messaging with the extension is synchronous we don't need
+// synchronization between service goroutines. There can only be
+// a service goroutine at a time.
 
 package native
 
@@ -20,6 +14,12 @@ import (
 	"os"
 )
 
+// A Handler responds to a native message.
+//
+// ServeNative should write the data to the ResponseWriter and then return.
+// Returning signals that the message is finished; it is not valid to use
+// the ResponseWriter or read from the Message.Body after or concurrently with
+// the completion of the ServeNative call.
 type Handler interface {
         ServeNative(ResponseWriter, *Message)
 }
@@ -33,6 +33,7 @@ type ResponseWriter interface {
         Write([]byte) (int, error)
 }
 
+// A Message represents a message received by the native process.
 type Message struct {
         Body io.Reader
         ContentLength uint32
@@ -52,6 +53,7 @@ func (p prefixWriter) Write(responseBytes []byte) (int, error) {
         return int(n), err
 }
 
+// A Server defines parameters for running a native process.
 type Server struct {
         //TODO(edoput) DefaultServeMux
         Handler Handler
@@ -62,13 +64,9 @@ type Server struct {
         //ConnContext func(ctx context.Context, c net.Conn) context.Context
 }
 
+// ListenAndServe reads from STDIO messages and dispatch them to the server's Handler
+// in a new service goroutine.
 func (s *Server) ListenAndServe() error {
-        var h = s.Handler
-        if h == nil {
-                //TODO(edoput) DefaultServeMux
-                // handler to invoke, native.DefaultServeMux if nil
-        }
-        var w = prefixWriter{os.Stdout}
         //TODO(edoput) handle panic, just restart
         //TODO(edoput) context
         for {
@@ -76,10 +74,25 @@ func (s *Server) ListenAndServe() error {
                 var b = make([]byte, 4)
                 io.ReadFull(os.Stdin, b)
                 var n = binary.LittleEndian.Uint32(b)
-                // then actually read the message body
+                // NOTE(edoput) without reading the full body of the message
+                // once we kick off the goroutine we are then free to read
+                // some more. That would consume the message 4 bytes at a time
+                // and spawn goroutines with meaningless messages.
                 var body = make([]byte, n)
                 io.ReadFull(os.Stdin, body)
-                go h.ServeNative(w, &Message{bytes.NewReader(body), binary.LittleEndian.Uint32(b)})
+                go s.serve(&Message{bytes.NewReader(body), binary.LittleEndian.Uint32(b)})
         }
         return nil
+}
+
+func (s *Server) serve(m *Message) {
+        var h = s.Handler
+        if h == nil {
+                //TODO(edoput) DefaultServeMux
+                // handler to invoke, native.DefaultServeMux if nil
+        }
+        var w = prefixWriter{os.Stdout}
+        h.ServeNative(w, m)
+        // everything goes out of scope and
+        // gets
 }
