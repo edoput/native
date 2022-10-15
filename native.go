@@ -11,7 +11,12 @@ import (
 	"bytes"
 	"encoding/binary"
 	"io"
+	"log"
 	"os"
+)
+
+var (
+	DefaultLogger = log.New(os.Stderr, "", 0)
 )
 
 // A Handler responds to a native message.
@@ -56,10 +61,15 @@ func (p prefixWriter) Write(responseBytes []byte) (int, error) {
 type Server struct {
 	//TODO(edoput) DefaultServeMux
 	Handler         Handler
+        // MessageAccepter specifies an optional callback for accepting
+        // messages.
 	MessageAccepter func(uint32) bool
+	// ErrorLog specifies an optional logger for errors accepting
+	// messages or unexpected behavior from handlers.
+	// If nil, logging is done via native.DefaultLogger.
+	ErrorLog *log.Logger
 	//ReadTimeout time.Duration
 	//WriteTimeout time.Duration
-	//ErrorLog *log.Logger
 	//BaseContext func(net.Listener) context.Context
 	//ConnContext func(ctx context.Context, c net.Conn) context.Context
 }
@@ -106,4 +116,12 @@ func (s *Server) serve(m *Message) {
 	h.ServeNative(w, m)
 	// everything goes out of scope and
 	// gets
+}
+
+func (s *Server) logf(format string, args ...any) {
+	if s.ErrorLog != nil {
+		s.ErrorLog.Printf(format, args...)
+	} else {
+		DefaultLogger.Printf(format, args...)
+	}
 }
