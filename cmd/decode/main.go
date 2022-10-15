@@ -19,70 +19,69 @@
 // }
 //
 // The extension replies with a single message kind.
-// The *Amount* field contains the updated value. 
+// The *Amount* field contains the updated value.
 //
 // {
 //     "Amount": n
 // }
 
-
 package main
 
 import (
+	"encoding/json"
 	"fmt"
-        "os"
-        "encoding/json"
 	"github.com/edoput/native"
+	"os"
 )
 
 // our native process server
 type S struct {
-        Value int
+	Value int
 }
 
 // extension messages
 type Add struct {
-        Amount int
+	Amount int
 }
 
 type Remove struct {
-        Amount int
+	Amount int
 }
 
 type Request struct {
-        Type string
-        AddData *Add
-        RemoveData *Remove
+	Type       string
+	AddData    *Add
+	RemoveData *Remove
 }
 
 // native process messages
 type Response struct {
-        Amount int
+	Amount int
 }
 
 func (s *S) ServeNative(w native.ResponseWriter, m *native.Message) {
-        var req Request
-        var dec = json.NewDecoder(m.Body)
-        _ = dec.Decode(&req)
+	var req Request
+	var dec = json.NewDecoder(m.Body)
+	_ = dec.Decode(&req)
 
-        var res Response
-        var enc = json.NewEncoder(w)
+	var res Response
+	var enc = json.NewEncoder(w)
 
-        switch req.Type {
-        case "add":
-                s.Value += req.AddData.Amount
-        case "remove":
-                s.Value -= req.RemoveData.Amount
-        }
-        res.Amount = s.Value
+	switch req.Type {
+	case "add":
+		s.Value += req.AddData.Amount
+	case "remove":
+		s.Value -= req.RemoveData.Amount
+	}
+	res.Amount = s.Value
 
-        _ = enc.Encode(res)
+	_ = enc.Encode(res)
 }
 
 func main() {
 
-        var server = native.Server{Handler: &S{0}}
-        if err := server.ListenAndServe(); err != nil {
-                fmt.Fprintln(os.Stderr, err)
-        }
+	var server = native.Server{Handler: &S{0}}
+	if err := server.ListenAndServe(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+	}
 }
