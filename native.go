@@ -55,7 +55,8 @@ func (p prefixWriter) Write(responseBytes []byte) (int, error) {
 // A Server defines parameters for running a native process.
 type Server struct {
 	//TODO(edoput) DefaultServeMux
-	Handler Handler
+	Handler         Handler
+	MessageAccepter func(uint32) bool
 	//ReadTimeout time.Duration
 	//WriteTimeout time.Duration
 	//ErrorLog *log.Logger
@@ -63,9 +64,17 @@ type Server struct {
 	//ConnContext func(ctx context.Context, c net.Conn) context.Context
 }
 
+func alwaysAccept(uint32) bool {
+	return true
+}
+
 // ListenAndServe reads from STDIO messages and dispatch them to the server's Handler
 // in a new service goroutine.
 func (s *Server) ListenAndServe() error {
+	var messageAccepter = alwaysAccept
+	if s.MessageAccepter != nil {
+		messageAccepter = s.MessageAccepter
+	}
 	//TODO(edoput) handle panic, just restart
 	//TODO(edoput) context
 	for {
@@ -73,6 +82,9 @@ func (s *Server) ListenAndServe() error {
 		var b = make([]byte, 4)
 		io.ReadFull(os.Stdin, b)
 		var n = binary.LittleEndian.Uint32(b)
+		if !messageAccepter(n) {
+			io.Copy(io.Discard, os.Stdin)
+		}
 		// NOTE(edoput) without reading the full body of the message
 		// once we kick off the goroutine we are then free to read
 		// some more. That would consume the message 4 bytes at a time
