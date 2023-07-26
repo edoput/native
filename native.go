@@ -10,6 +10,7 @@ package native
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -17,6 +18,7 @@ import (
 
 var (
 	DefaultLogger = log.New(os.Stderr, "", 0)
+	CloseError = fmt.Errorf("native connection closed")
 )
 
 // A Handler responds to a native message.
@@ -78,7 +80,7 @@ func alwaysAccept(uint32) bool {
 	return true
 }
 
-// ListenAndServe reads from STDIO messages and dispatch them to the server's Handler
+// ListenAndServe reads from STDIN messages and dispatch them to the server's Handler
 // in a new service goroutine.
 func (s *Server) ListenAndServe() error {
 	var messageAccepter = alwaysAccept
@@ -90,16 +92,29 @@ func (s *Server) ListenAndServe() error {
 	for {
 		// first read the message length
 		var b = make([]byte, 4)
-		io.ReadFull(os.Stdin, b)
-		var n = binary.LittleEndian.Uint32(b)
-		if !messageAccepter(n) {
+		_ , err := io.ReadFull(os.Stdin, b)
+
+		if err != nil {
+			if err == io.EOF {
+				// standard in has been closed 
+				// there is nothing to do except
+				// propagating error up
+				return CloseError
+			}
+			return err
+		}
+
+		var size = binary.LittleEndian.Uint32(b)
+		if !messageAccepter(size) {
+			// discard input when not accepted
+			// copy to next EOF
 			io.Copy(io.Discard, os.Stdin)
 		}
 		// NOTE(edoput) without reading the full body of the message
 		// once we kick off the goroutine we are then free to read
 		// some more. That would consume the message 4 bytes at a time
 		// and spawn goroutines with meaningless messages.
-		var body = make([]byte, n)
+		var body = make([]byte, size)
 		io.ReadFull(os.Stdin, body)
 		go s.serve(&Message{bytes.NewReader(body), binary.LittleEndian.Uint32(b)})
 	}
